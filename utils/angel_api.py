@@ -5,6 +5,7 @@ import json
 import pandas as pd
 from datetime import datetime, timedelta
 import pyotp
+import time  # Import the time module
 
 class AngelOneAPI:
     """
@@ -174,7 +175,7 @@ class AngelOneAPI:
                 token = self._get_token(exchange, symbol)
                 self.logger.info(f"Using token: {token} for {symbol}")
 
-                payload = {
+                params = {  # Changed from payload to params
                     "exchange": exchange,
                     "tradingsymbol": symbol,
                     "symboltoken": token
@@ -185,7 +186,7 @@ class AngelOneAPI:
                     self.headers['Authorization'] = f"Bearer {self.jwt_token}"
 
                 # Make request with extended timeout
-                response = requests.post(ltp_url, json=payload, headers=self.headers, timeout=30)
+                response = requests.get(ltp_url, params=params, headers=self.headers, timeout=30)  # Changed to GET
 
                 # Process successful responses immediately
                 if response.status_code == 200 and response.content:
@@ -197,6 +198,9 @@ class AngelOneAPI:
                             if ltp > 0:
                                 self.logger.info(f"Successfully retrieved LTP for {symbol}: ₹{ltp}")
                                 return data
+                            else:
+                                error_msg = response_data.get('message', 'Unknown error')
+                                self.logger.error(f"API error: {error_msg}")
                         else:
                             error_msg = response_data.get('message', 'Unknown error')
                             self.logger.error(f"API error: {error_msg}")
@@ -210,309 +214,166 @@ class AngelOneAPI:
                         self.logger.info("Re-login successful, retrying request...")
                         continue
                     else:
-                        self.logger.error("Re-login failed. Please check API credentials.")
-                        # Don't return None yet, try remaining attempts
+                        self.logger.error("Re-login failed, returning simulated data.")
+                        return self._get_simulated_ltp(exchange, symbol)
 
-                else:
-                    self.logger.error(f"HTTP Error: {response.status_code}")
-                    try:
-                        self.logger.debug(f"Response: {response.text[:200]}...")
-                    except:
-                        pass
-            except requests.exceptions.RequestException as e:
-                self.logger.error(f"Network error while getting LTP: {str(e)}")
+                self.logger.error(f"HTTP error {response.status_code}: {response.text}")
+
+            except requests.exceptions.RequestException as req_err:
+                self.logger.error(f"Request Exception: {str(req_err)}")
             except Exception as e:
-                self.logger.error(f"Get LTP error: {str(e)}")
+                self.logger.error(f"Error getting LTP: {str(e)}")
 
-            # Wait before retrying
             if attempt < max_retries - 1:
-                sleep_time = min(2 ** attempt, 10)  # Exponential backoff, max 10 seconds
-                self.logger.info(f"Retrying in {sleep_time} seconds...")
-                import time
-                time.sleep(sleep_time)
+                time.sleep(2)  # Wait before retrying
+            else:
+                self.logger.error(f"Max retries ({max_retries}) exceeded, returning simulated data.")
+                return self._get_simulated_ltp(exchange, symbol)
 
-        # If we get here, we've exhausted our retries
-        self.logger.error(f"Failed to get LTP after {max_retries} attempts, returning simulated data")
-
-        # Return simulated data for development or when API is unavailable
+        # If all attempts fail, return simulated data
+        self.logger.warning("Failed to get LTP from API, returning simulated data")
         return self._get_simulated_ltp(exchange, symbol)
 
-    def get_historical_data(self, exchange, symbol, timeframe, count):
+    def get_historical_data(self, exchange, symbol, timeframe, days_back, max_retries=3):
         """
-        Get historical candlestick data
+        Get historical market data for a symbol
 
         Args:
             exchange (str): Exchange (NSE, BSE)
             symbol (str): Trading symbol
-            timeframe (str): Candle timeframe (1 minute, 5 minutes, etc.)
-            count (int): Number of candles
+            timeframe (str): Candle timeframe (e.g., '1D', '1H', '30M', '5M')
+            days_back (int): Number of days of historical data to fetch
+            max_retries (int, optional): Maximum number of retry attempts. Defaults to 3.
 
         Returns:
-            pandas.DataFrame: Historical data or None if request failed
+            list: Historical data or None if request failed
         """
         if not self.logged_in:
             self.logger.error("Not logged in")
-            return None
+            # Try to login first if we're not logged in
+            if not self.login():
+                self.logger.error("Login failed, returning None")
+                return None
 
-        try:
-            # Convert timeframe string to Angel One API format
-            tf_map = {
-                "1 minute": "ONE_MINUTE",
-                "5 minutes": "FIVE_MINUTE",
-                "15 minutes": "FIFTEEN_MINUTE",
-                "30 minutes": "THIRTY_MINUTE",
-                "1 hour": "ONE_HOUR",
-                "1 day": "ONE_DAY"
-            }
+        for attempt in range(max_retries):
+            try:
+                self.logger.info(f"Attempt {attempt+1}/{max_retries}: Getting historical data for {symbol} on {exchange}")
+                history_url = f"{self.base_url}/rest/secure/angelbroking/historicaldata/v1/getCandleData/{exchange}/{symbol}/{timeframe}/{days_back}"
 
-            angel_timeframe = tf_map.get(timeframe, "ONE_DAY")
+                # Ensure headers are up to date
+                if hasattr(self, 'jwt_token') and self.jwt_token:
+                    self.headers['Authorization'] = f"Bearer {self.jwt_token}"
 
-            # Calculate from and to dates
-            to_date = datetime.now()
-            from_date = to_date - timedelta(days=count)
+                response = requests.get(history_url, headers=self.headers, timeout=30)
 
-            candle_url = f"{self.base_url}/rest/secure/angelbroking/historical/v1/getCandleData"
+                if response.status_code == 200 and response.content:
+                    try:
+                        response_data = response.json()
+                        if response_data.get('status') and response_data.get('message') == "SUCCESS":
+                            return response_data.get('data', [])
+                        else:
+                            self.logger.error(f"API error: {response_data['message']}")
+                    except ValueError as json_err:
+                        self.logger.error(f"Invalid JSON response: {str(json_err)}")
 
-            payload = {
-                "exchange": exchange,
-                "symboltoken": self._get_token(exchange, symbol),
-                "interval": angel_timeframe,
-                "fromdate": from_date.strftime("%Y-%m-%d %H:%M"),
-                "todate": to_date.strftime("%Y-%m-%d %H:%M")
-            }
+                # Handle authentication issues
+                if response.status_code in [401, 403] or "Request Rejected" in response.text:
+                    self.logger.warning(f"Authentication issue detected. Attempting re-login...")
+                    if self.login():
+                        self.logger.info("Re-login successful, retrying request...")
+                        continue
+                    else:
+                        self.logger.error("Re-login failed.")
+                        return None
 
-            response = requests.post(candle_url, json=payload, headers=self.headers)
+                self.logger.error(f"HTTP error {response.status_code}: {response.text}")
 
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data['status'] and response_data['message'] == "SUCCESS":
-                    # Convert data to DataFrame
-                    data = response_data['data']
-                    df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                    df['timestamp'] = pd.to_datetime(df['timestamp'])
-                    df.set_index('timestamp', inplace=True)
-                    return df
-                else:
-                    self.logger.error(f"Failed to get historical data: {response_data['message']}")
+            except requests.exceptions.RequestException as req_err:
+                self.logger.error(f"Request Exception: {str(req_err)}")
+            except Exception as e:
+                self.logger.error(f"Error getting historical data: {str(e)}")
+
+            if attempt < max_retries - 1:
+                time.sleep(2)  # Wait before retrying
             else:
-                self.logger.error(f"HTTP Error: {response.status_code}")
+                self.logger.error(f"Max retries ({max_retries}) exceeded.")
+                return None
 
-            return None
-        except Exception as e:
-            self.logger.error(f"Get historical data error: {str(e)}")
-            return None
+        return None
 
-    def place_order(self, symbol, exchange, transaction_type, quantity, order_type, price=0, trigger_price=0, product_type="INTRADAY"):
+    def place_order(self, exchange, symbol, transactiontype, ordertype, quantity, price=0.0, triggerprice=0.0):
         """
-        Place a new order
+        Place an order
 
         Args:
-            symbol (str): Trading symbol
             exchange (str): Exchange (NSE, BSE)
-            transaction_type (str): BUY or SELL
+            symbol (str): Trading symbol
+            transactiontype (str): BUY or SELL
+            ordertype (str): NORMAL, STOPLOSS, MARKET
             quantity (int): Order quantity
-            order_type (str): MARKET, LIMIT, SL, SL-M
-            price (float): Order price (for LIMIT, SL orders)
-            trigger_price (float): Trigger price (for SL, SL-M orders)
-            product_type (str): DELIVERY, INTRADAY, MARGIN
+            price (float, optional): Order price for LIMIT orders. Defaults to 0.0.
+            triggerprice (float, optional): Trigger price for STOPLOSS orders. Defaults to 0.0.
 
         Returns:
-            dict: Order response or error message
+            dict: Order response or None if request failed
         """
         if not self.logged_in:
             self.logger.error("Not logged in")
-            return {"status": "error", "message": "Not logged in"}
+            return None
 
         try:
-            order_url = f"{self.base_url}/rest/secure/angelbroking/order/v1/placeOrder"
+            order_url = f"{self.base_url}/rest/secure/angelbroking/order/v3/placeOrder"
 
-            # Map order type to Angel One format
-            order_type_map = {
-                "MARKET": "MARKET",
-                "LIMIT": "LIMIT",
-                "SL": "STOPLOSS_LIMIT",
-                "SL-M": "STOPLOSS_MARKET"
-            }
+            # Get token for the symbol
+            token = self._get_token(exchange, symbol)
 
-            # Map product type to Angel One format
-            product_type_map = {
-                "DELIVERY": "DELIVERY",
-                "INTRADAY": "INTRADAY",
-                "MARGIN": "MARGIN",
-                "CNC": "DELIVERY",
-                "MIS": "INTRADAY",
-                "NRML": "MARGIN"
-            }
-
-            angel_order_type = order_type_map.get(order_type, "MARKET")
-            angel_product_type = product_type_map.get(product_type, "INTRADAY")
-
-            # Convert quantity to integer and make sure it's a string in the payload
-            quantity_int = int(quantity)
-
-            # Default values for price and trigger price
-            price_str = "0"
-            trigger_price_str = "0"
-
-            # Set appropriate price values based on order type
-            if order_type in ["LIMIT", "SL"] and price > 0:
-                price_str = str(price)
-
-            if order_type in ["SL", "SL-M"] and trigger_price > 0:
-                trigger_price_str = str(trigger_price)
-
-            # Create the payload with all required fields
             payload = {
                 "variety": "NORMAL",
                 "tradingsymbol": symbol,
-                "symboltoken": self._get_token(exchange, symbol),
-                "transactiontype": transaction_type,
                 "exchange": exchange,
-                "ordertype": angel_order_type,
-                "producttype": angel_product_type,
-                "duration": "DAY",
-                "price": price_str,
-                "triggerprice": trigger_price_str,
-                "quantity": str(quantity_int),
-                "squareoff": "0",
-                "stoploss": "0"
+                "transactiontype": transactiontype,
+                "ordertype": ordertype,
+                "quantity": quantity,
+                "price": price,
+                "triggerprice": triggerprice,
+                "producttype": "DELIVERY",
+                "duration": "DAY"
             }
 
-            # Log the payload for debugging
-            self.logger.info(f"Order payload: {payload}")
+            # Ensure headers are up to date
+            if hasattr(self, 'jwt_token') and self.jwt_token:
+                self.headers['Authorization'] = f"Bearer {self.jwt_token}"
 
-            response = requests.post(order_url, json=payload, headers=self.headers)
+            response = requests.post(order_url, json=payload, headers=self.headers, timeout=30)
 
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data['status'] and response_data['message'] == "SUCCESS":
-                    self.logger.info(f"Order placed successfully: {response_data}")
-                    return {
-                        "status": "success", 
-                        "order_id": response_data['data']['orderid'],
-                        "message": "Order placed successfully"
-                    }
-                else:
-                    error_msg = response_data.get('message', 'Unknown error')
-                    self.logger.error(f"Failed to place order: {error_msg}")
-                    self.logger.error(f"Response data: {response_data}")
-                    return {"status": "error", "message": error_msg}
+            if response.status_code == 200 and response.content:
+                try:
+                    response_data = response.json()
+                    if response_data.get('status') and response_data.get('message') == "SUCCESS":
+                        return response_data.get('data', {})
+                    else:
+                        self.logger.error(f"Order placement failed: {response_data['message']}")
+                except ValueError as json_err:
+                    self.logger.error(f"Invalid JSON response: {str(json_err)}")
             else:
-                self.logger.error(f"HTTP Error: {response.status_code}")
-                self.logger.error(f"Response content: {response.text}")
-                return {"status": "error", "message": f"HTTP Error: {response.status_code}"}
+                self.logger.error(f"HTTP error {response.status_code}: {response.text}")
 
-        except Exception as e:
-            error_msg = str(e)
-            self.logger.error(f"Place order error: {error_msg}")
-            return {"status": "error", "message": error_msg}
-
-    def modify_order(self, order_id, price=None, quantity=None, trigger_price=None):
-        """
-        Modify an existing order
-
-        Args:
-            order_id (str): Order ID to modify
-            price (float, optional): New price
-            quantity (int, optional): New quantity
-            trigger_price (float, optional): New trigger price
-
-        Returns:
-            bool: True if order was modified successfully, False otherwise
-        """
-        if not self.logged_in:
-            self.logger.error("Not logged in")
-            return False
-
-        try:
-            modify_url = f"{self.base_url}/rest/secure/angelbroking/order/v1/modifyOrder"
-
-            # Base payload with required fields
-            payload = {
-                "variety": "NORMAL",
-                "orderid": order_id
-            }
-
-            # Add optional parameters if provided with proper string conversion
-            if price is not None:
-                payload["price"] = str(float(price))
-
-            if quantity is not None:
-                payload["quantity"] = str(int(quantity))
-
-            if trigger_price is not None:
-                payload["triggerprice"] = str(float(trigger_price))
-
-            # Log the payload for debugging
-            self.logger.info(f"Modify order payload: {payload}")
-
-            response = requests.post(modify_url, json=payload, headers=self.headers)
-
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data['status'] and response_data['message'] == "SUCCESS":
-                    self.logger.info(f"Order {order_id} modified successfully")
-                    return True
+            # Handle authentication issues
+            if response.status_code in [401, 403] or "Request Rejected" in response.text:
+                self.logger.warning(f"Authentication issue detected. Attempting re-login...")
+                if self.login():
+                    self.logger.info("Re-login successful, retrying order placement...")
+                    return self.place_order(exchange, symbol, transactiontype, ordertype, quantity, price, triggerprice)  # Retry
                 else:
-                    self.logger.error(f"Failed to modify order: {response_data['message']}")
-                    self.logger.error(f"Response data: {response_data}")
-            else:
-                self.logger.error(f"HTTP Error: {response.status_code}")
-                self.logger.error(f"Response content: {response.text}")
+                    self.logger.error("Re-login failed, order placement aborted.")
+                    return None
 
-            return False
+        except requests.exceptions.RequestException as req_err:
+            self.logger.error(f"Request Exception: {str(req_err)}")
         except Exception as e:
-            error_msg = str(e)
-            self.logger.error(f"Modify order error: {error_msg}")
-            return False
+            self.logger.error(f"Error placing order: {str(e)}")
 
-    def cancel_order(self, order_id):
-        """
-        Cancel an order
-
-        Args:
-            order_id (str): Order ID to cancel
-
-        Returns:
-            bool: True if order was cancelled successfully, False otherwise
-        """
-        if not self.logged_in:
-            self.logger.error("Not logged in")
-            return False
-
-        try:
-            cancel_url = f"{self.base_url}/rest/secure/angelbroking/order/v1/cancelOrder"
-
-            # Ensure order_id is a string
-            order_id_str = str(order_id)
-
-            payload = {
-                "variety": "NORMAL",
-                "orderid": order_id_str
-            }
-
-            # Log the payload for debugging
-            self.logger.info(f"Cancel order payload: {payload}")
-
-            response = requests.post(cancel_url, json=payload, headers=self.headers)
-
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data['status'] and response_data['message'] == "SUCCESS":
-                    self.logger.info(f"Order {order_id} cancelled successfully")
-                    return True
-                else:
-                    self.logger.error(f"Failed to cancel order: {response_data['message']}")
-                    self.logger.error(f"Response data: {response_data}")
-            else:
-                self.logger.error(f"HTTP Error: {response.status_code}")
-                self.logger.error(f"Response content: {response.text}")
-
-            return False
-        except Exception as e:
-            error_msg = str(e)
-            self.logger.error(f"Cancel order error: {error_msg}")
-            return False
+        return None
 
     def get_order_book(self):
         """
@@ -694,28 +555,6 @@ class AngelOneAPI:
             return None
         except Exception as e:
             self.logger.error(f"Error getting option chain: {str(e)}")
-            return None
-
-            self.logger.error("Not logged in")
-            return None
-
-        try:
-            positions_url = f"{self.base_url}/rest/secure/angelbroking/order/v1/getPosition"
-
-            response = requests.get(positions_url, headers=self.headers)
-
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data['status'] and response_data['message'] == "SUCCESS":
-                    return response_data['data']
-                else:
-                    self.logger.error(f"Failed to get positions: {response_data['message']}")
-            else:
-                self.logger.error(f"HTTP Error: {response.status_code}")
-
-            return None
-        except Exception as e:
-            self.logger.error(f"Get positions error: {str(e)}")
             return None
 
     def get_portfolio(self):
