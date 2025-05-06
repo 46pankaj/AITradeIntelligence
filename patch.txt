@@ -1,0 +1,75 @@
+--- app.py.orig
++++ app.py
+@@ -339,10 +339,10 @@
+         col1, col2 = st.columns(2)
+         
+         with col1:
+-            take_profit = st.number_input("Take Profit (%)", 0.0, 100.0, 5.0, 0.5)
++            take_profit = st.number_input("Take Profit (%)", 0.0, 100.0, 5.0, 0.5, key="manual_take_profit")
+         
+         with col2:
+-            stop_loss = st.number_input("Stop Loss (%)", 0.0, 100.0, 3.0, 0.5)
++            stop_loss = st.number_input("Stop Loss (%)", 0.0, 100.0, 3.0, 0.5, key="manual_stop_loss")
+         
+     else:  # AI-Generated Strategy
+         # Time frame
+@@ -373,10 +373,10 @@
+         col1, col2 = st.columns(2)
+         
+         with col1:
+-            take_profit = st.number_input("Take Profit (%)", 0.0, 100.0, 5.0, 0.5)
++            take_profit = st.number_input("Take Profit (%)", 0.0, 100.0, 5.0, 0.5, key="ai_take_profit")
+         
+         with col2:
+-            stop_loss = st.number_input("Stop Loss (%)", 0.0, 100.0, 3.0, 0.5)
++            stop_loss = st.number_input("Stop Loss (%)", 0.0, 100.0, 3.0, 0.5, key="ai_stop_loss")
+     
+     # Strategy Name
+     strategy_name = st.text_input("Strategy Name", f"{symbol} Strategy")
+@@ -530,18 +530,18 @@
+             )
+             
+             with col1:
+-                quantity = st.number_input("Quantity", min_value=1, step=1, value=1)
++                quantity = st.number_input("Quantity", min_value=1, step=1, value=1, key="order_quantity")
+             
+             if order_type == "LIMIT":
+                 with col2:
+-                    limit_price = st.number_input("Limit Price", min_value=0.01, value=float(current_price), step=0.05)
++                    limit_price = st.number_input("Limit Price", min_value=0.01, value=float(current_price), step=0.05, key="limit_price")
+             elif order_type == "SL" or order_type == "SL-M":
+                 col2_1, col2_2 = st.columns(2)
+                 with col2_1:
+-                    limit_price = st.number_input("Limit Price", min_value=0.01, value=float(current_price), step=0.05)
++                    limit_price = st.number_input("Limit Price", min_value=0.01, value=float(current_price), step=0.05, key="sl_limit_price")
+                 
+                 with col2_2:
+-                    trigger_price = st.number_input("Trigger Price", min_value=0.01, value=float(current_price) * 0.99 if transaction_type == "BUY" else float(current_price) * 1.01, step=0.05)
++                    trigger_price = st.number_input("Trigger Price", min_value=0.01, value=float(current_price) * 0.99 if transaction_type == "BUY" else float(current_price) * 1.01, step=0.05, key="trigger_price")
+             
+             # Product type
+             product_type = st.radio(
+@@ -621,10 +621,10 @@
+             col1, col2 = st.columns(2)
+             
+             with col1:
+-                quantity = st.number_input("Quantity", min_value=1, step=1, value=1)
++                quantity = st.number_input("Quantity", min_value=1, step=1, value=1, key="strategy_quantity")
+             
+             with col2:
+-                capital = st.number_input("Capital (₹)", min_value=1000, step=1000, value=10000)
++                capital = st.number_input("Capital (₹)", min_value=1000, step=1000, value=10000, key="strategy_capital")
+             
+             # Execute strategy button
+             if st.button("Execute Strategy"):
+@@ -711,8 +711,8 @@
+                 st.subheader(f"Modify Order: {selected_order_id}")
+                 
+                 with st.form("modify_order_form"):
+-                    new_price = st.number_input("New Price", min_value=0.01, step=0.05)
+-                    new_quantity = st.number_input("New Quantity", min_value=1, step=1)
++                    new_price = st.number_input("New Price", min_value=0.01, step=0.05, key="modify_price")
++                    new_quantity = st.number_input("New Quantity", min_value=1, step=1, key="modify_quantity")
+                     
+                     submit = st.form_submit_button("Modify Order")
+                     

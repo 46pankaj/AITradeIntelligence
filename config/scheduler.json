@@ -1,0 +1,38 @@
+{
+    "monday": {
+        "enabled": true,
+        "start_time": "09:15",
+        "end_time": "15:30"
+    },
+    "tuesday": {
+        "enabled": false,
+        "start_time": "09:15",
+        "end_time": "15:30"
+    },
+    "wednesday": {
+        "enabled": true,
+        "start_time": "09:15",
+        "end_time": "15:30"
+    },
+    "thursday": {
+        "enabled": false,
+        "start_time": "09:15",
+        "end_time": "15:30"
+    },
+    "friday": {
+        "enabled": false,
+        "start_time": "09:15",
+        "end_time": "15:30"
+    },
+    "saturday": {
+        "enabled": false,
+        "start_time": "09:15",
+        "end_time": "15:30"
+    },
+    "sunday": {
+        "enabled": false,
+        "start_time": "09:15",
+        "end_time": "15:30"
+    },
+    "strategies": []
+}

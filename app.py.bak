@@ -1,0 +1,1199 @@
+import os
+import streamlit as st
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import plotly.graph_objects as go
+
+from utils.angel_api import AngelOneAPI
+from utils.data_manager import DataManager
+from utils.technical_analysis import TechnicalAnalysis
+from utils.sentiment_analysis import SentimentAnalysis
+from utils.oi_analysis import OIAnalysis
+from utils.strategy_generator import StrategyGenerator
+from utils.trade_executor import TradeExecutor
+from utils.risk_management import RiskManager
+
+# Page configuration
+st.set_page_config(
+    page_title="AI Trading Platform - Angel One",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Initialize session state variables if they don't exist
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'api' not in st.session_state:
+    st.session_state.api = None
+if 'selected_symbols' not in st.session_state:
+    st.session_state.selected_symbols = []
+if 'auto_trading' not in st.session_state:
+    st.session_state.auto_trading = False
+if 'risk_level' not in st.session_state:
+    st.session_state.risk_level = "Medium"
+if 'strategies' not in st.session_state:
+    st.session_state.strategies = []
+if 'trades' not in st.session_state:
+    st.session_state.trades = []
+
+# Login Function
+def login():
+    st.session_state.api = AngelOneAPI(
+        api_key=st.session_state.api_key,
+        client_id=st.session_state.client_id,
+        client_password=st.session_state.password,
+        totp_key=st.session_state.totp_key
+    )
+    login_success = st.session_state.api.login()
+    if login_success:
+        st.session_state.logged_in = True
+        st.success("Login Successful!")
+        st.rerun()
+    else:
+        st.error("Login Failed. Please check your credentials.")
+
+# Main App
+def main():
+    # Sidebar
+    with st.sidebar:
+        st.image("https://images.unsplash.com/photo-1554260570-e9689a3418b8", width=250)
+        st.title("AI Trading Platform")
+        
+        # Login Section
+        if not st.session_state.logged_in:
+            st.subheader("Login to Angel One")
+            st.session_state.api_key = st.text_input("API Key", type="password")
+            st.session_state.client_id = st.text_input("Client ID")
+            st.session_state.password = st.text_input("Password", type="password")
+            st.session_state.totp_key = st.text_input("TOTP Key", type="password")
+            st.button("Login", on_click=login)
+        else:
+            # App Navigation
+            st.subheader("Navigation")
+            page = st.radio(
+                "Select a page",
+                ["Dashboard", "Strategy Builder", "Trade Execution", "Performance Monitoring", "Settings"]
+            )
+            
+            # Auto Trading Toggle
+            st.subheader("Auto Trading")
+            auto_trading = st.toggle("Enable Auto Trading", value=st.session_state.auto_trading)
+            if auto_trading != st.session_state.auto_trading:
+                st.session_state.auto_trading = auto_trading
+                if auto_trading:
+                    st.success("Auto Trading Enabled")
+                else:
+                    st.warning("Auto Trading Disabled")
+            
+            # Risk Management
+            st.subheader("Risk Management")
+            st.session_state.risk_level = st.select_slider(
+                "Risk Level",
+                options=["Low", "Medium", "High"],
+                value=st.session_state.risk_level
+            )
+            
+            # Logout Button
+            if st.button("Logout"):
+                st.session_state.logged_in = False
+                st.session_state.api = None
+                st.rerun()
+
+    # Main Content
+    if not st.session_state.logged_in:
+        # Landing page for non-logged-in users
+        st.title("Welcome to AI Trading Platform")
+        
+        col1, col2 = st.columns([3, 2])
+        
+        with col1:
+            st.markdown("""
+            ### AI-Powered Trading with Angel One Integration
+            
+            Our platform helps you trade smarter with AI-generated strategies based on:
+            - Technical indicators analysis
+            - Market sentiment
+            - Open Interest (OI) data
+            
+            Trade automatically or manually on NSE, BSE, Nifty, Bank Nifty, Sensex and more.
+            
+            Please login with your Angel One credentials to get started.
+            """)
+            
+            st.markdown("### Key Features")
+            feature_col1, feature_col2 = st.columns(2)
+            
+            with feature_col1:
+                st.markdown("- 📊 Real-time market data")
+                st.markdown("- 🤖 AI strategy generation")
+                st.markdown("- 📈 Technical indicator analysis")
+            
+            with feature_col2:
+                st.markdown("- 🔍 Sentiment analysis")
+                st.markdown("- 🚀 Automated trade execution")
+                st.markdown("- ⚙️ Risk management")
+        
+        with col2:
+            st.image("https://images.unsplash.com/photo-1639825988283-39e5408b75e8", caption="AI Trading Platform")
+            st.image("https://images.unsplash.com/photo-1579532582937-16c108930bf6", caption="Real-time Market Data")
+    
+    else:
+        # Display the selected page
+        if page == "Dashboard":
+            display_dashboard()
+        elif page == "Strategy Builder":
+            display_strategy_builder()
+        elif page == "Trade Execution":
+            display_trade_execution()
+        elif page == "Performance Monitoring":
+            display_performance_monitoring()
+        elif page == "Settings":
+            display_settings()
+
+def display_dashboard():
+    st.title("Trading Dashboard")
+    
+    # Market Overview
+    st.header("Market Overview")
+    
+    # Create layout with columns
+    col1, col2, col3 = st.columns(3)
+    
+    # Mocked market data for demonstration
+    with col1:
+        st.subheader("Nifty 50")
+        nifty_value = st.session_state.api.get_ltp("NSE", "NIFTY")
+        if nifty_value:
+            st.metric("Current Value", f"₹{nifty_value['ltp']}", f"{nifty_value['change_percent']}%")
+    
+    with col2:
+        st.subheader("Bank Nifty")
+        bank_nifty_value = st.session_state.api.get_ltp("NSE", "BANKNIFTY")
+        if bank_nifty_value:
+            st.metric("Current Value", f"₹{bank_nifty_value['ltp']}", f"{bank_nifty_value['change_percent']}%")
+    
+    with col3:
+        st.subheader("Sensex")
+        sensex_value = st.session_state.api.get_ltp("BSE", "SENSEX")
+        if sensex_value:
+            st.metric("Current Value", f"₹{sensex_value['ltp']}", f"{sensex_value['change_percent']}%")
+    
+    # Market Charts
+    st.subheader("Market Performance")
+    
+    # Watchlist
+    st.header("Watchlist")
+    # Get symbols from session state
+    if not st.session_state.selected_symbols:
+        st.info("Add symbols to your watchlist from the Settings page")
+    else:
+        # Create a table for watchlist
+        watchlist_data = []
+        for symbol in st.session_state.selected_symbols:
+            symbol_data = st.session_state.api.get_ltp(symbol['exchange'], symbol['symbol'])
+            if symbol_data:
+                watchlist_data.append({
+                    "Symbol": symbol['symbol'],
+                    "Exchange": symbol['exchange'],
+                    "LTP": symbol_data['ltp'],
+                    "Change %": symbol_data['change_percent'],
+                    "Volume": symbol_data.get('volume', 'N/A')
+                })
+        
+        if watchlist_data:
+            st.dataframe(pd.DataFrame(watchlist_data), use_container_width=True)
+    
+    # Active Strategies
+    st.header("Active Strategies")
+    if not st.session_state.strategies:
+        st.info("No active strategies. Create one from the Strategy Builder page.")
+    else:
+        strategy_data = []
+        for strategy in st.session_state.strategies:
+            strategy_data.append({
+                "Strategy Name": strategy['name'],
+                "Symbol": strategy['symbol'],
+                "Type": strategy['type'],
+                "Status": strategy['status'],
+                "P&L": strategy['pnl']
+            })
+        
+        if strategy_data:
+            st.dataframe(pd.DataFrame(strategy_data), use_container_width=True)
+    
+    # Recent Trades
+    st.header("Recent Trades")
+    if not st.session_state.trades:
+        st.info("No recent trades.")
+    else:
+        trade_data = []
+        for trade in st.session_state.trades:
+            trade_data.append({
+                "Symbol": trade['symbol'],
+                "Type": trade['type'],
+                "Quantity": trade['quantity'],
+                "Price": trade['price'],
+                "Status": trade['status'],
+                "Timestamp": trade['timestamp']
+            })
+        
+        if trade_data:
+            st.dataframe(pd.DataFrame(trade_data), use_container_width=True)
+
+def display_strategy_builder():
+    st.title("Strategy Builder")
+    
+    st.markdown("""
+    Build custom trading strategies or use AI to generate strategies based on market data, 
+    technical indicators, market sentiment, and Open Interest analysis.
+    """)
+    
+    # Strategy type selection
+    strategy_type = st.radio(
+        "Select Strategy Type", 
+        ["Manual Strategy", "AI-Generated Strategy"]
+    )
+    
+    # Symbol selection
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        exchange = st.selectbox(
+            "Select Exchange",
+            ["NSE", "BSE"]
+        )
+    
+    with col2:
+        if exchange == "NSE":
+            symbol = st.selectbox(
+                "Select Symbol",
+                ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFCBANK"]
+            )
+        else:
+            symbol = st.selectbox(
+                "Select Symbol",
+                ["SENSEX", "RELIANCE", "TCS", "INFY", "HDFCBANK"]
+            )
+    
+    # Strategy Parameters
+    st.subheader("Strategy Parameters")
+    
+    if strategy_type == "Manual Strategy":
+        # Time frame
+        timeframe = st.selectbox(
+            "Select Timeframe",
+            ["1 minute", "5 minutes", "15 minutes", "30 minutes", "1 hour", "1 day"]
+        )
+        
+        # Technical Indicators
+        st.subheader("Technical Indicators")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            use_moving_avg = st.checkbox("Moving Average")
+            if use_moving_avg:
+                ma_type = st.selectbox("MA Type", ["Simple", "Exponential", "Weighted"])
+                ma_period = st.slider("MA Period", 5, 200, 50)
+            
+            use_rsi = st.checkbox("Relative Strength Index (RSI)")
+            if use_rsi:
+                rsi_period = st.slider("RSI Period", 5, 30, 14)
+                rsi_overbought = st.slider("RSI Overbought", 70, 90, 70)
+                rsi_oversold = st.slider("RSI Oversold", 10, 30, 30)
+        
+        with col2:
+            use_macd = st.checkbox("MACD")
+            if use_macd:
+                macd_fast = st.slider("MACD Fast Period", 5, 20, 12)
+                macd_slow = st.slider("MACD Slow Period", 10, 40, 26)
+                macd_signal = st.slider("MACD Signal Period", 5, 15, 9)
+            
+            use_bollinger = st.checkbox("Bollinger Bands")
+            if use_bollinger:
+                bb_period = st.slider("BB Period", 5, 50, 20)
+                bb_std = st.slider("BB Standard Deviation", 1, 5, 2)
+        
+        # Entry/Exit Conditions
+        st.subheader("Entry and Exit Conditions")
+        
+        # Entry conditions
+        st.markdown("#### Entry Conditions")
+        
+        entry_condition = st.selectbox(
+            "Entry Condition",
+            ["MA Crossover", "RSI Oversold", "MACD Crossover", "Bollinger Breakout"]
+        )
+        
+        # Exit conditions
+        st.markdown("#### Exit Conditions")
+        
+        exit_condition = st.selectbox(
+            "Exit Condition",
+            ["MA Crossover", "RSI Overbought", "MACD Crossover", "Bollinger Breakout", "Take Profit", "Stop Loss"]
+        )
+        
+        # Take profit and stop loss
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            take_profit = st.number_input("Take Profit (%)", 0.0, 100.0, 5.0, 0.5)
+        
+        with col2:
+            stop_loss = st.number_input("Stop Loss (%)", 0.0, 100.0, 3.0, 0.5)
+        
+    else:  # AI-Generated Strategy
+        # Time frame
+        timeframe = st.selectbox(
+            "Select Timeframe",
+            ["1 minute", "5 minutes", "15 minutes", "30 minutes", "1 hour", "1 day"]
+        )
+        
+        # Strategy Preferences
+        st.subheader("Strategy Preferences")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            include_technical = st.checkbox("Include Technical Analysis", value=True)
+            include_sentiment = st.checkbox("Include Sentiment Analysis", value=True)
+        
+        with col2:
+            include_oi = st.checkbox("Include Open Interest Analysis", value=True)
+            strategy_aggression = st.select_slider(
+                "Strategy Aggression",
+                options=["Very Conservative", "Conservative", "Moderate", "Aggressive", "Very Aggressive"],
+                value="Moderate"
+            )
+        
+        # Take profit and stop loss
+        st.subheader("Risk Management")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            take_profit = st.number_input("Take Profit (%)", 0.0, 100.0, 5.0, 0.5)
+        
+        with col2:
+            stop_loss = st.number_input("Stop Loss (%)", 0.0, 100.0, 3.0, 0.5)
+    
+    # Strategy Name
+    strategy_name = st.text_input("Strategy Name", f"{symbol} Strategy")
+    
+    # Create Strategy Button
+    if st.button("Create Strategy"):
+        if strategy_type == "Manual Strategy":
+            # Create manual strategy
+            strategy = {
+                'name': strategy_name,
+                'symbol': symbol,
+                'exchange': exchange,
+                'type': 'Manual',
+                'timeframe': timeframe,
+                'indicators': {},
+                'entry_condition': entry_condition,
+                'exit_condition': exit_condition,
+                'take_profit': take_profit,
+                'stop_loss': stop_loss,
+                'status': 'Active',
+                'pnl': 0.0,
+                'created_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            
+            # Add indicators
+            if use_moving_avg:
+                strategy['indicators']['moving_average'] = {
+                    'type': ma_type,
+                    'period': ma_period
+                }
+            if use_rsi:
+                strategy['indicators']['rsi'] = {
+                    'period': rsi_period,
+                    'overbought': rsi_overbought,
+                    'oversold': rsi_oversold
+                }
+            if use_macd:
+                strategy['indicators']['macd'] = {
+                    'fast_period': macd_fast,
+                    'slow_period': macd_slow,
+                    'signal_period': macd_signal
+                }
+            if use_bollinger:
+                strategy['indicators']['bollinger_bands'] = {
+                    'period': bb_period,
+                    'std': bb_std
+                }
+        else:
+            # Generate AI strategy
+            strategy_generator = StrategyGenerator()
+            
+            # Get historical data
+            data = st.session_state.api.get_historical_data(exchange, symbol, timeframe, 100)
+            
+            # Generate strategy
+            if data is not None:
+                strategy = strategy_generator.generate_strategy(
+                    symbol=symbol,
+                    exchange=exchange,
+                    data=data,
+                    use_technical=include_technical,
+                    use_sentiment=include_sentiment,
+                    use_oi=include_oi,
+                    risk_level=strategy_aggression,
+                    take_profit=take_profit,
+                    stop_loss=stop_loss,
+                    strategy_name=strategy_name
+                )
+                
+                st.json(strategy)
+            else:
+                st.error("Failed to fetch historical data. Please try again.")
+                return
+        
+        # Add strategy to session state
+        if 'strategies' not in st.session_state:
+            st.session_state.strategies = []
+        
+        st.session_state.strategies.append(strategy)
+        st.success(f"Strategy '{strategy_name}' created successfully!")
+        
+        # Display strategy details
+        st.subheader("Strategy Details")
+        st.json(strategy)
+
+def display_trade_execution():
+    st.title("Trade Execution")
+    
+    # Display auto-trading status
+    if st.session_state.auto_trading:
+        st.success("Auto Trading is Enabled")
+    else:
+        st.warning("Auto Trading is Disabled. Enable it from the sidebar to allow automatic trade execution.")
+    
+    # Tabs for different functions
+    tab1, tab2, tab3 = st.tabs(["Manual Trading", "Strategy Execution", "Active Orders"])
+    
+    with tab1:
+        st.header("Manual Trading")
+        
+        # Exchange and Symbol Selection
+        col1, col2 = st.columns(2)
+        with col1:
+            exchange = st.selectbox(
+                "Select Exchange",
+                ["NSE", "BSE"]
+            )
+        
+        with col2:
+            if exchange == "NSE":
+                symbol_options = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFCBANK"]
+            else:
+                symbol_options = ["SENSEX", "RELIANCE", "TCS", "INFY", "HDFCBANK"]
+            
+            symbol = st.selectbox(
+                "Select Symbol",
+                symbol_options
+            )
+        
+        # Get current price
+        price_data = st.session_state.api.get_ltp(exchange, symbol)
+        if price_data:
+            current_price = price_data['ltp']
+            st.metric("Current Price", f"₹{current_price}", f"{price_data['change_percent']}%")
+        else:
+            st.error("Unable to fetch current price. Please try again.")
+            current_price = 0
+        
+        # Order Type Selection
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            order_type = st.radio(
+                "Order Type",
+                ["MARKET", "LIMIT", "SL", "SL-M"]
+            )
+        
+        with col2:
+            transaction_type = st.radio(
+                "Transaction Type",
+                ["BUY", "SELL"]
+            )
+        
+        # Product Type and Quantity
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            product_type = st.selectbox(
+                "Product Type",
+                ["DELIVERY", "INTRADAY", "MARGIN"]
+            )
+        
+        with col2:
+            quantity = st.number_input("Quantity", min_value=1, step=1, value=1)
+        
+        # Price inputs based on order type
+        if order_type == "LIMIT":
+            limit_price = st.number_input("Limit Price", min_value=0.01, value=float(current_price), step=0.05)
+        elif order_type in ["SL", "SL-M"]:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                limit_price = st.number_input("Limit Price", min_value=0.01, value=float(current_price), step=0.05)
+            
+            with col2:
+                trigger_price = st.number_input("Trigger Price", min_value=0.01, value=float(current_price) * 0.99 if transaction_type == "BUY" else float(current_price) * 1.01, step=0.05)
+        
+        # Place Order Button
+        if st.button("Place Order"):
+            # Prepare order parameters
+            order_params = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "transaction_type": transaction_type,
+                "product_type": product_type,
+                "quantity": quantity,
+                "order_type": order_type
+            }
+            
+            if order_type == "LIMIT":
+                order_params["price"] = limit_price
+            elif order_type in ["SL", "SL-M"]:
+                order_params["price"] = limit_price
+                order_params["trigger_price"] = trigger_price
+            
+            # Place order
+            trade_executor = TradeExecutor(st.session_state.api)
+            order_result = trade_executor.place_order(**order_params)
+            
+            if order_result['status'] == 'success':
+                st.success(f"Order placed successfully! Order ID: {order_result['order_id']}")
+                
+                # Add to trades in session state
+                if 'trades' not in st.session_state:
+                    st.session_state.trades = []
+                
+                st.session_state.trades.append({
+                    'symbol': symbol,
+                    'type': transaction_type,
+                    'quantity': quantity,
+                    'price': limit_price if order_type in ["LIMIT", "SL"] else current_price,
+                    'status': 'Placed',
+                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
+            else:
+                st.error(f"Order placement failed: {order_result['message']}")
+    
+    with tab2:
+        st.header("Strategy Execution")
+        
+        # Display available strategies
+        if not st.session_state.strategies:
+            st.info("No strategies available. Create one from the Strategy Builder page.")
+        else:
+            st.subheader("Available Strategies")
+            
+            strategy_data = []
+            for idx, strategy in enumerate(st.session_state.strategies):
+                strategy_data.append({
+                    "ID": idx,
+                    "Strategy Name": strategy['name'],
+                    "Symbol": strategy['symbol'],
+                    "Exchange": strategy['exchange'],
+                    "Type": strategy['type'],
+                    "Status": strategy['status']
+                })
+            
+            selected_strategy_df = pd.DataFrame(strategy_data)
+            st.dataframe(selected_strategy_df, use_container_width=True)
+            
+            # Strategy execution options
+            st.subheader("Execute Strategy")
+            
+            strategy_id = st.selectbox(
+                "Select Strategy",
+                options=range(len(st.session_state.strategies)),
+                format_func=lambda x: st.session_state.strategies[x]['name']
+            )
+            
+            selected_strategy = st.session_state.strategies[strategy_id]
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                quantity = st.number_input("Quantity", min_value=1, step=1, value=1)
+            
+            with col2:
+                capital = st.number_input("Capital (₹)", min_value=1000, step=1000, value=10000)
+            
+            # Execute strategy button
+            if st.button("Execute Strategy"):
+                # Get current market data
+                price_data = st.session_state.api.get_ltp(
+                    selected_strategy['exchange'], 
+                    selected_strategy['symbol']
+                )
+                
+                if not price_data:
+                    st.error("Unable to fetch market data. Please try again.")
+                else:
+                    # Initialize strategy execution
+                    trade_executor = TradeExecutor(st.session_state.api)
+                    
+                    # Execute strategy
+                    execution_result = trade_executor.execute_strategy(
+                        strategy=selected_strategy,
+                        quantity=quantity,
+                        capital=capital
+                    )
+                    
+                    if execution_result['status'] == 'success':
+                        st.success("Strategy execution initiated successfully!")
+                        
+                        # Update strategy status
+                        st.session_state.strategies[strategy_id]['status'] = 'Executing'
+                        
+                        # Add to trades
+                        if 'trades' not in st.session_state:
+                            st.session_state.trades = []
+                        
+                        st.session_state.trades.append({
+                            'symbol': selected_strategy['symbol'],
+                            'type': execution_result['transaction_type'],
+                            'quantity': quantity,
+                            'price': price_data['ltp'],
+                            'status': 'Executed',
+                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        })
+                    else:
+                        st.error(f"Strategy execution failed: {execution_result['message']}")
+    
+    with tab3:
+        st.header("Active Orders")
+        
+        # Fetch and display active orders
+        orders = st.session_state.api.get_order_book()
+        
+        if not orders:
+            st.info("No active orders found.")
+        else:
+            # Process orders
+            order_data = []
+            for order in orders:
+                order_data.append({
+                    "Order ID": order['order_id'],
+                    "Symbol": order['symbol'],
+                    "Exchange": order['exchange'],
+                    "Transaction Type": order['transaction_type'],
+                    "Quantity": order['quantity'],
+                    "Status": order['status'],
+                    "Order Type": order['order_type'],
+                    "Price": order.get('price', 'Market'),
+                    "Timestamp": order['order_timestamp']
+                })
+            
+            # Display orders
+            st.dataframe(pd.DataFrame(order_data), use_container_width=True)
+            
+            # Allow modifying or cancelling orders
+            st.subheader("Modify/Cancel Order")
+            
+            # Select order to modify
+            order_id = st.selectbox(
+                "Select Order",
+                options=[order['Order ID'] for order in order_data]
+            )
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                action = st.radio("Action", ["Modify", "Cancel"])
+            
+            if action == "Modify":
+                with col2:
+                    new_price = st.number_input("New Price", min_value=0.01, step=0.05)
+                    new_quantity = st.number_input("New Quantity", min_value=1, step=1)
+                
+                if st.button("Submit Modification"):
+                    # Call API to modify order
+                    modification_result = st.session_state.api.modify_order(
+                        order_id=order_id,
+                        price=new_price,
+                        quantity=new_quantity
+                    )
+                    
+                    if modification_result:
+                        st.success("Order modified successfully!")
+                    else:
+                        st.error("Failed to modify order. Please try again.")
+            else:  # Cancel order
+                if st.button("Cancel Order"):
+                    # Call API to cancel order
+                    cancellation_result = st.session_state.api.cancel_order(order_id)
+                    
+                    if cancellation_result:
+                        st.success("Order cancelled successfully!")
+                    else:
+                        st.error("Failed to cancel order. Please try again.")
+
+def display_performance_monitoring():
+    st.title("Performance Monitoring")
+    
+    # Display tabs for different views
+    tab1, tab2, tab3 = st.tabs(["Portfolio Overview", "Strategy Performance", "Trade History"])
+    
+    with tab1:
+        st.header("Portfolio Overview")
+        
+        # Portfolio Metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        # Get portfolio data from API
+        portfolio_data = st.session_state.api.get_portfolio()
+        
+        if portfolio_data:
+            with col1:
+                st.metric("Portfolio Value", f"₹{portfolio_data['portfolio_value']:,.2f}", 
+                          f"{portfolio_data['day_change_percent']}%")
+            
+            with col2:
+                st.metric("Day's P&L", f"₹{portfolio_data['day_pnl']:,.2f}", 
+                          f"{portfolio_data['day_change_percent']}%")
+            
+            with col3:
+                st.metric("Overall P&L", f"₹{portfolio_data['overall_pnl']:,.2f}", 
+                          f"{portfolio_data['overall_change_percent']}%")
+            
+            with col4:
+                st.metric("Available Margin", f"₹{portfolio_data['available_margin']:,.2f}")
+        
+            # Portfolio Allocation Chart
+            st.subheader("Portfolio Allocation")
+            
+            # Create a pie chart for portfolio allocation
+            holdings = portfolio_data.get('holdings', [])
+            if holdings:
+                # Prepare data for pie chart
+                labels = [holding['symbol'] for holding in holdings]
+                values = [holding['current_value'] for holding in holdings]
+                
+                fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.4)])
+                fig.update_layout(title_text='Holdings Distribution')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Holdings table
+                st.subheader("Current Holdings")
+                
+                holding_data = []
+                for holding in holdings:
+                    holding_data.append({
+                        "Symbol": holding['symbol'],
+                        "Exchange": holding['exchange'],
+                        "Quantity": holding['quantity'],
+                        "Avg Price": f"₹{holding['avg_price']:,.2f}",
+                        "Current Price": f"₹{holding['ltp']:,.2f}",
+                        "Current Value": f"₹{holding['current_value']:,.2f}",
+                        "P&L": f"₹{holding['pnl']:,.2f}",
+                        "P&L %": f"{holding['pnl_percent']}%"
+                    })
+                
+                st.dataframe(pd.DataFrame(holding_data), use_container_width=True)
+            else:
+                st.info("No holdings in your portfolio.")
+        else:
+            st.error("Unable to fetch portfolio data. Please try again.")
+    
+    with tab2:
+        st.header("Strategy Performance")
+        
+        # Strategy selection
+        if not st.session_state.strategies:
+            st.info("No strategies available for analysis.")
+        else:
+            selected_strategy = st.selectbox(
+                "Select Strategy to Analyze",
+                options=[strategy['name'] for strategy in st.session_state.strategies]
+            )
+            
+            # Find the selected strategy
+            strategy = next((s for s in st.session_state.strategies if s['name'] == selected_strategy), None)
+            
+            if strategy:
+                st.subheader(f"Performance Analysis: {strategy['name']}")
+                
+                # Strategy details
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Symbol", strategy['symbol'])
+                
+                with col2:
+                    st.metric("Type", strategy['type'])
+                
+                with col3:
+                    st.metric("Status", strategy['status'])
+                
+                with col4:
+                    st.metric("P&L", f"₹{strategy['pnl']:,.2f}")
+                
+                # Strategy performance chart
+                st.subheader("Performance Chart")
+                
+                # Get strategy performance data
+                # This would need to be implemented with actual data from your backend
+                dates = pd.date_range(start=strategy['created_at'], periods=10)
+                performance = np.cumsum(np.random.normal(0.5, 1, 10))
+                
+                # Create a performance chart
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=dates, y=performance, mode='lines+markers', name='Strategy P&L'))
+                fig.update_layout(title_text='Strategy Performance Over Time', xaxis_title='Date', yaxis_title='Cumulative P&L')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Strategy metrics
+                st.subheader("Strategy Metrics")
+                
+                # Mock metrics calculation
+                metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+                
+                with metrics_col1:
+                    st.metric("Win Rate", "65%")
+                    st.metric("Profit Factor", "2.1")
+                
+                with metrics_col2:
+                    st.metric("Avg Win", "₹1,250")
+                    st.metric("Avg Loss", "₹600")
+                
+                with metrics_col3:
+                    st.metric("Max Drawdown", "8.5%")
+                    st.metric("Sharpe Ratio", "1.82")
+                
+                # Strategy trades
+                st.subheader("Strategy Trades")
+                
+                # Mock trade data
+                trade_data = []
+                trade_data.append({
+                    "Date": strategy['created_at'],
+                    "Symbol": strategy['symbol'],
+                    "Type": "BUY",
+                    "Quantity": 10,
+                    "Price": 1500,
+                    "P&L": 750,
+                    "Status": "Closed"
+                })
+                
+                trade_data.append({
+                    "Date": (datetime.strptime(strategy['created_at'], "%Y-%m-%d %H:%M:%S") + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S"),
+                    "Symbol": strategy['symbol'],
+                    "Type": "SELL",
+                    "Quantity": 10,
+                    "Price": 1575,
+                    "P&L": 750,
+                    "Status": "Closed"
+                })
+                
+                st.dataframe(pd.DataFrame(trade_data), use_container_width=True)
+                
+                # Strategy settings/parameters
+                with st.expander("Strategy Settings"):
+                    st.json(strategy)
+    
+    with tab3:
+        st.header("Trade History")
+        
+        # Date range selection
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            start_date = st.date_input("Start Date", value=datetime.now() - timedelta(days=30))
+        
+        with col2:
+            end_date = st.date_input("End Date", value=datetime.now())
+        
+        # Get trade history
+        if 'trades' in st.session_state and st.session_state.trades:
+            # Filter trades by date
+            filtered_trades = [
+                trade for trade in st.session_state.trades
+                if start_date <= datetime.strptime(trade['timestamp'], "%Y-%m-%d %H:%M:%S").date() <= end_date
+            ]
+            
+            if filtered_trades:
+                # Display trade history table
+                st.dataframe(pd.DataFrame(filtered_trades), use_container_width=True)
+                
+                # Trade statistics
+                st.subheader("Trade Statistics")
+                
+                # Calculate statistics
+                total_trades = len(filtered_trades)
+                buy_trades = len([t for t in filtered_trades if t['type'] == 'BUY'])
+                sell_trades = len([t for t in filtered_trades if t['type'] == 'SELL'])
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Total Trades", total_trades)
+                
+                with col2:
+                    st.metric("Buy Trades", buy_trades)
+                
+                with col3:
+                    st.metric("Sell Trades", sell_trades)
+                
+                # Trade distribution chart
+                st.subheader("Trade Distribution")
+                
+                # Create a distribution chart
+                dates = [datetime.strptime(trade['timestamp'], "%Y-%m-%d %H:%M:%S").date() for trade in filtered_trades]
+                date_counts = {}
+                for date in dates:
+                    date_str = date.strftime("%Y-%m-%d")
+                    if date_str in date_counts:
+                        date_counts[date_str] += 1
+                    else:
+                        date_counts[date_str] = 1
+                
+                fig = go.Figure()
+                fig.add_trace(go.Bar(x=list(date_counts.keys()), y=list(date_counts.values()), name='Trade Count'))
+                fig.update_layout(title_text='Daily Trade Count', xaxis_title='Date', yaxis_title='Number of Trades')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No trades found for the selected date range.")
+        else:
+            st.info("No trade history available.")
+
+def display_settings():
+    st.title("Settings")
+    
+    # Create tabs for different settings categories
+    tab1, tab2, tab3, tab4 = st.tabs(["Account Settings", "Watchlist", "Trading Preferences", "Risk Management"])
+    
+    with tab1:
+        st.header("Account Settings")
+        
+        # Display account information
+        if st.session_state.api:
+            user_profile = st.session_state.api.get_user_profile()
+            
+            if user_profile:
+                st.subheader("User Information")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.text_input("Name", value=user_profile['name'], disabled=True)
+                    st.text_input("Client ID", value=user_profile['client_id'], disabled=True)
+                
+                with col2:
+                    st.text_input("Email", value=user_profile['email'], disabled=True)
+                    st.text_input("Mobile", value=user_profile['mobile'], disabled=True)
+                
+                # API settings
+                st.subheader("API Settings")
+                
+                api_key = st.text_input("API Key", value="*" * 8 + st.session_state.api_key[-4:], type="password", disabled=True)
+                
+                # Change TOTP Key
+                if st.button("Update TOTP Key"):
+                    with st.form("totp_form"):
+                        new_totp = st.text_input("New TOTP Key", type="password")
+                        submitted = st.form_submit_button("Update")
+                        
+                        if submitted and new_totp:
+                            st.session_state.totp_key = new_totp
+                            st.success("TOTP Key updated successfully!")
+            else:
+                st.error("Unable to fetch user profile.")
+    
+    with tab2:
+        st.header("Watchlist")
+        
+        # Display current watchlist
+        st.subheader("Current Watchlist")
+        
+        if 'selected_symbols' not in st.session_state or not st.session_state.selected_symbols:
+            st.info("Your watchlist is empty. Add symbols below.")
+        else:
+            # Display watchlist items with remove option
+            for i, symbol in enumerate(st.session_state.selected_symbols):
+                col1, col2, col3 = st.columns([3, 2, 1])
+                
+                with col1:
+                    st.write(f"{symbol['symbol']}")
+                
+                with col2:
+                    st.write(f"{symbol['exchange']}")
+                
+                with col3:
+                    if st.button("Remove", key=f"remove_{i}"):
+                        st.session_state.selected_symbols.pop(i)
+                        st.rerun()
+        
+        # Add symbols to watchlist
+        st.subheader("Add to Watchlist")
+        
+        with st.form("add_symbol_form"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                exchange = st.selectbox(
+                    "Exchange",
+                    ["NSE", "BSE"],
+                    key="watchlist_exchange"
+                )
+            
+            with col2:
+                if exchange == "NSE":
+                    symbol_options = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFCBANK"]
+                else:
+                    symbol_options = ["SENSEX", "RELIANCE", "TCS", "INFY", "HDFCBANK"]
+                
+                symbol = st.selectbox(
+                    "Symbol",
+                    symbol_options,
+                    key="watchlist_symbol"
+                )
+            
+            submitted = st.form_submit_button("Add to Watchlist")
+            
+            if submitted:
+                # Check if symbol already exists
+                if 'selected_symbols' not in st.session_state:
+                    st.session_state.selected_symbols = []
+                
+                if any(s['symbol'] == symbol and s['exchange'] == exchange for s in st.session_state.selected_symbols):
+                    st.error(f"{symbol} from {exchange} is already in your watchlist.")
+                else:
+                    st.session_state.selected_symbols.append({
+                        'symbol': symbol,
+                        'exchange': exchange
+                    })
+                    st.success(f"Added {symbol} to watchlist.")
+                    st.rerun()
+    
+    with tab3:
+        st.header("Trading Preferences")
+        
+        # Default trade settings
+        st.subheader("Default Trade Settings")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            default_product = st.selectbox(
+                "Default Product Type",
+                ["DELIVERY", "INTRADAY", "MARGIN"],
+                index=1  # Default to INTRADAY
+            )
+        
+        with col2:
+            default_order_type = st.selectbox(
+                "Default Order Type",
+                ["MARKET", "LIMIT", "SL", "SL-M"],
+                index=0  # Default to MARKET
+            )
+        
+        # Auto-trading settings
+        st.subheader("Auto-Trading Settings")
+        
+        auto_trading = st.toggle("Enable Auto Trading", value=st.session_state.auto_trading)
+        if auto_trading != st.session_state.auto_trading:
+            st.session_state.auto_trading = auto_trading
+            if auto_trading:
+                st.success("Auto Trading Enabled")
+            else:
+                st.warning("Auto Trading Disabled")
+        
+        # Trade frequency
+        trade_frequency = st.slider(
+            "Maximum Trades Per Day",
+            min_value=1,
+            max_value=50,
+            value=10,
+            step=1
+        )
+        
+        # Time restrictions
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            trading_start_time = st.time_input("Trading Start Time", value=datetime.strptime("09:15", "%H:%M").time())
+        
+        with col2:
+            trading_end_time = st.time_input("Trading End Time", value=datetime.strptime("15:30", "%H:%M").time())
+        
+        # Save preferences button
+        if st.button("Save Preferences"):
+            # Save preferences (in a real app, these would be saved to a database or config file)
+            st.success("Trading preferences saved successfully!")
+    
+    with tab4:
+        st.header("Risk Management")
+        
+        # Risk level
+        st.subheader("Risk Level")
+        
+        risk_level = st.select_slider(
+            "Risk Level",
+            options=["Low", "Medium", "High"],
+            value=st.session_state.risk_level
+        )
+        
+        if risk_level != st.session_state.risk_level:
+            st.session_state.risk_level = risk_level
+        
+        # Risk parameters
+        st.subheader("Risk Parameters")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            max_capital_per_trade = st.slider(
+                "Max Capital Per Trade (%)",
+                min_value=1,
+                max_value=100,
+                value=10 if risk_level == "Low" else (20 if risk_level == "Medium" else 30),
+                step=1
+            )
+            
+            daily_loss_limit = st.slider(
+                "Daily Loss Limit (%)",
+                min_value=1,
+                max_value=50,
+                value=3 if risk_level == "Low" else (5 if risk_level == "Medium" else 10),
+                step=1
+            )
+        
+        with col2:
+            default_stop_loss = st.slider(
+                "Default Stop Loss (%)",
+                min_value=0.5,
+                max_value=10.0,
+                value=2.0 if risk_level == "Low" else (3.0 if risk_level == "Medium" else 5.0),
+                step=0.5
+            )
+            
+            default_take_profit = st.slider(
+                "Default Take Profit (%)",
+                min_value=0.5,
+                max_value=20.0,
+                value=3.0 if risk_level == "Low" else (5.0 if risk_level == "Medium" else 8.0),
+                step=0.5
+            )
+        
+        # Risk manager initialization
+        if st.button("Apply Risk Settings"):
+            risk_manager = RiskManager()
+            risk_manager.set_risk_level(risk_level)
+            risk_manager.set_max_capital_per_trade(max_capital_per_trade / 100)
+            risk_manager.set_daily_loss_limit(daily_loss_limit / 100)
+            risk_manager.set_default_stop_loss(default_stop_loss / 100)
+            risk_manager.set_default_take_profit(default_take_profit / 100)
+            
+            st.success("Risk settings applied successfully!")
+
+# Run the app
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,19 @@
+{
+    "trading_interval": 15,
+    "watched_symbols": [
+        "NIFTY"
+    ],
+    "additional_symbols": [],
+    "default_risk": "Medium",
+    "max_capital_per_trade": 5000,
+    "max_risk_per_trade": 2.0,
+    "order_type": "MARKET",
+    "product_type": "INTRADAY",
+    "auto_capital_allocation": true,
+    "auto_profit_booking": true,
+    "auto_hedging": false,
+    "auto_strategy_refresh": true,
+    "strategy_generation_frequency": "Medium (3-5 per day)",
+    "model_type": "Auto-Select Best Model",
+    "last_updated": "2025-05-03 11:35:30"
+}
