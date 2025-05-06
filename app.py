@@ -8,6 +8,7 @@ import threading
 import time
 import pyotp
 import json
+import random
 
 from utils.angel_api import AngelOneAPI
 from utils.data_manager import DataManager
@@ -98,6 +99,47 @@ def login():
         st.rerun()
     else:
         st.error("Login Failed. Please check your credentials.")
+
+def get_market_price(exchange, symbol, use_demo=False):
+    """
+    Get market price with robust error handling and fallback to demo data
+    """
+    if use_demo or not st.session_state.get('api') or not st.session_state.logged_in:
+        # Fallback to demo data
+        base_prices = {
+            "NIFTY": 18500.00,
+            "BANKNIFTY": 43000.00,
+            "SENSEX": 62000.00,
+            "RELIANCE": 2500.00,
+            "TCS": 3400.00,
+            "INFY": 1500.00,
+            "HDFCBANK": 1600.00
+        }
+        
+        # Add small random variation to demo prices
+        price = base_prices.get(symbol, 1000.00)
+        price += random.uniform(-price*0.01, price*0.01)  # +/- 1% variation
+        
+        return {
+            'ltp': round(price, 2),
+            'change_percent': round(random.uniform(-0.5, 0.5), 2),
+            'volume': random.randint(10000, 50000)
+        }
+    
+    try:
+        # Try to get real market data
+        price_data = st.session_state.api.get_ltp(exchange, symbol)
+        
+        if price_data and 'ltp' in price_data:
+            return price_data
+        else:
+            # If API returns empty or invalid data, fall back to demo
+            st.warning(f"Received empty/invalid price data for {symbol}, using demo data")
+            return get_market_price(exchange, symbol, use_demo=True)
+            
+    except Exception as e:
+        st.warning(f"Error fetching price for {symbol}: {str(e)}, using demo data")
+        return get_market_price(exchange, symbol, use_demo=True)
 
 # Main App
 def main():
@@ -248,31 +290,27 @@ def display_dashboard():
     # Create layout with columns
     col1, col2, col3 = st.columns(3)
 
-    # Mocked market data for demonstration
+    # Get market data with fallback to demo
     with col1:
         st.subheader("Nifty 50")
-        nifty_value = st.session_state.api.get_ltp("NSE", "NIFTY")
-        if nifty_value:
-            st.metric("Current Value", f"₹{nifty_value['ltp']}", f"{nifty_value['change_percent']}%")
+        nifty_value = get_market_price("NSE", "NIFTY")
+        st.metric("Current Value", f"₹{nifty_value['ltp']:,.2f}", f"{nifty_value['change_percent']}%")
 
     with col2:
         st.subheader("Bank Nifty")
-        bank_nifty_value = st.session_state.api.get_ltp("NSE", "BANKNIFTY")
-        if bank_nifty_value:
-            st.metric("Current Value", f"₹{bank_nifty_value['ltp']}", f"{bank_nifty_value['change_percent']}%")
+        bank_nifty_value = get_market_price("NSE", "BANKNIFTY")
+        st.metric("Current Value", f"₹{bank_nifty_value['ltp']:,.2f}", f"{bank_nifty_value['change_percent']}%")
 
     with col3:
         st.subheader("Sensex")
-        sensex_value = st.session_state.api.get_ltp("BSE", "SENSEX")
-        if sensex_value:
-            st.metric("Current Value", f"₹{sensex_value['ltp']}", f"{sensex_value['change_percent']}%")
+        sensex_value = get_market_price("BSE", "SENSEX")
+        st.metric("Current Value", f"₹{sensex_value['ltp']:,.2f}", f"{sensex_value['change_percent']}%")
 
     # Market Charts
     st.subheader("Market Performance")
 
     # Watchlist
     st.header("Watchlist")
-    # Get symbols from session state
     if not st.session_state.selected_symbols:
         st.info("Add symbols to your watchlist from the Settings page")
     else:
@@ -291,15 +329,14 @@ def display_dashboard():
                 # Skip invalid items
                 continue
                 
-            symbol_data = st.session_state.api.get_ltp(exchange, symbol)
-            if symbol_data:
-                watchlist_data.append({
-                    "Symbol": symbol,
-                    "Exchange": exchange,
-                    "LTP": symbol_data['ltp'],
-                    "Change %": symbol_data['change_percent'],
-                    "Volume": symbol_data.get('volume', 'N/A')
-                })
+            symbol_data = get_market_price(exchange, symbol)
+            watchlist_data.append({
+                "Symbol": symbol,
+                "Exchange": exchange,
+                "LTP": f"₹{symbol_data['ltp']:,.2f}",
+                "Change %": f"{symbol_data['change_percent']}%",
+                "Volume": f"{symbol_data.get('volume', 'N/A'):,}"
+            })
 
         if watchlist_data:
             st.dataframe(pd.DataFrame(watchlist_data), use_container_width=True)
@@ -317,7 +354,7 @@ def display_dashboard():
                 "Symbol": strategy['symbol'],
                 "Type": strategy['type'],
                 "Status": strategy['status'],
-                "P&L": strategy['pnl']
+                "P&L": f"₹{strategy['pnl']:,.2f}"
             })
 
         if strategy_data:
@@ -359,13 +396,15 @@ def display_dashboard():
                 "Symbol": trade['symbol'],
                 "Type": trade['type'],
                 "Quantity": trade['quantity'],
-                "Price": trade['price'],
+                "Price": f"₹{trade['price']:,.2f}",
                 "Status": trade['status'],
                 "Timestamp": trade['timestamp']
             })
 
         if trade_data:
             st.dataframe(pd.DataFrame(trade_data), use_container_width=True)
+
+
 
 def display_strategy_builder():
     st.title("Strategy Builder")
