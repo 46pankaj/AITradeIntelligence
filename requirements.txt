@@ -1,12 +1,12 @@
-anthropic>=0.50.0
+anthropic>=0.50.0        # Optional — only if used
 keras>=2.14.0
-numpy>=2.2.5
+numpy>=1.26.4
 openai>=1.76.2
 pandas>=2.2.3
 plotly>=6.0.1
 pyotp>=2.9.0
-scikit-learn>=1.6.1
-scipy>=1.15.2
+scikit-learn>=1.3.2
+scipy>=1.11.4
 statsmodels>=0.14.4
 streamlit>=1.44.1
 tensorflow>=2.14.0
