@@ -5,7 +5,7 @@ numpy
 yfinance
 alpha_vantage
 finnhub-python
-pandas-ta
+pandas-ta==0.3.14b0  # Compatible with Python <=3.11
 scikit-learn
 tensorflow
 xgboost
@@ -14,3 +14,7 @@ matplotlib
 python-dotenv
 requests
 joblib
+
+# Python runtime version (for Streamlit Cloud)
+# Add a separate file 'runtime.txt' with the line:
+# python-3.10
