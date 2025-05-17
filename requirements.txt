@@ -1,15 +1,12 @@
-streamlit
-pandas
-numpy==1.23.5
-yfinance
-alpha_vantage
-finnhub-python
-pandas-ta==0.3.14b0  # Compatible with Python <=3.11
-scikit-learn
-tensorflow
-xgboost
-lightgbm
-matplotlib
-python-dotenv
-requests
-joblib
+streamlit==1.22.0
+pandas==1.5.3
+numpy==1.24.2
+plotly==5.13.0
+yfinance==0.2.18
+tensorflow==2.11.0
+scikit-learn==1.2.1
+xgboost==1.7.3
+lightgbm==3.3.5
+python-dotenv==1.0.0
+pandas-ta==0.3.14b0
+requests==2.28.2
