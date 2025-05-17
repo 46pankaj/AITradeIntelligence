@@ -1,0 +1,16 @@
+# requirements.txt
+streamlit
+pandas
+numpy
+yfinance
+alpha_vantage
+finnhub-python
+pandas-ta
+scikit-learn
+tensorflow
+xgboost
+lightgbm
+matplotlib
+python-dotenv
+requests
+joblib
